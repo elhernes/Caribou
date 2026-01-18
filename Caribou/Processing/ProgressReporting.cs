@@ -43,7 +43,9 @@
                 {
                     int linesForFile = File.ReadLines(filePath).Count();
                     if (typeToFind == OSMGeometryType.Node) // Assume approximately half of the amount of a file is nodes
-                        linesForFile = Convert.ToInt32(linesForFile * 0.55, System.Globalization.CultureInfo.InvariantCulture); 
+                        linesForFile = Convert.ToInt32(linesForFile * 0.55, System.Globalization.CultureInfo.InvariantCulture);
+                    else if (typeToFind == OSMGeometryType.Relation) // Relations require parsing entire file (nodes + ways + relations)
+                        linesForFile = Convert.ToInt32(linesForFile * 1.2, System.Globalization.CultureInfo.InvariantCulture);
                     count.Add(linesForFile);
                 }
                 catch { // Usually when file path is unreadable/reachable

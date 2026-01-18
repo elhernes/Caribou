@@ -10,6 +10,7 @@
     {
         Node,
         Way,
-        Building
+        Building,
+        Relation
     }
 }

@@ -122,7 +122,7 @@
             var i = 0;
 
             foreach (var entry in foundBuildings)
-            { 
+            {
                 for (int j = 0; j < entry.Value.Count; j++)
                 {
                     GH_Path path = new GH_Path(i, j); // Need to ensure even an empty path exists to enable data matching
@@ -133,8 +133,63 @@
                 i++;
             }
             return output;
-        }   
-        
+        }
+
+        public static GH_Structure<GH_Brep> MakeTreeForRelations(Dictionary<OSMTag, List<Brep>> foundRelations)
+        {
+            var output = new GH_Structure<GH_Brep>();
+            var i = 0;
+
+            foreach (var entry in foundRelations)
+            {
+                for (int j = 0; j < entry.Value.Count; j++)
+                {
+                    GH_Path path = new GH_Path(i, j);
+                    output.EnsurePath(path);
+                    GH_Brep brepForPath = new GH_Brep(entry.Value[j]);
+                    output.Append(brepForPath, path);
+                }
+                i++;
+            }
+            return output;
+        }
+
+        public static GH_Structure<GH_Curve> MakeTreeForRelationPolylines(Dictionary<OSMTag, List<PolylineCurve>> foundRelations, RequestHandler result)
+        {
+            var output = new GH_Structure<GH_Curve>();
+            var tagIndex = 0;
+
+            foreach (var entry in foundRelations)
+            {
+                var tag = entry.Key;
+                var polylines = entry.Value;
+                var relationItems = result.FoundData[tag];
+
+                var polylineIndex = 0;
+                for (int relationIndex = 0; relationIndex < relationItems.Count; relationIndex++)
+                {
+                    var relation = relationItems[relationIndex];
+                    if (relation.Members == null) continue;
+
+                    // Create paths: {tagIndex}{relationIndex}{memberIndex}
+                    for (int memberIndex = 0; memberIndex < relation.Members.Count; memberIndex++)
+                    {
+                        if (polylineIndex < polylines.Count)
+                        {
+                            GH_Path path = new GH_Path(tagIndex, relationIndex, memberIndex);
+                            output.EnsurePath(path);
+                            GH_Curve curveForPath = new GH_Curve(polylines[polylineIndex]);
+                            output.Append(curveForPath, path);
+                            polylineIndex++;
+                        }
+                    }
+                }
+                tagIndex++;
+            }
+
+            return output;
+        }
+
         /// <summary>/// Uses the HSLuv color space (via a package) to create maximally perceptually-distinct colors for use in legends.</summary>
         private static GH_Colour GetPerceptualColorForTreeItem(double treeCount, double itemPosition)
         {

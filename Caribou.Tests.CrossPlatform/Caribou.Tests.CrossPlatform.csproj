@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.1.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.1.1" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Link to source files from main project (parsing logic only, no Rhino dependencies) -->
+    <Compile Include="..\Caribou\Models\Coord.cs" Link="Models\Coord.cs" />
+    <Compile Include="..\Caribou\Models\OSMTag.cs" Link="Models\OSMTag.cs" />
+    <Compile Include="..\Caribou\Models\OSMGeometryType.cs" Link="Models\OSMGeometryType.cs" />
+    <Compile Include="..\Caribou\Models\RelationMember.cs" Link="Models\RelationMember.cs" />
+    <Compile Include="..\Caribou\Models\FoundItem.cs" Link="Models\FoundItem.cs" />
+    <Compile Include="..\Caribou\Models\ParseRequest.cs" Link="Models\ParseRequest.cs" />
+    <Compile Include="..\Caribou\Models\RequestHandler.cs" Link="Models\RequestHandler.cs" />
+    <Compile Include="..\Caribou\Processing\ParseViaXMLReader.cs" Link="Processing\ParseViaXMLReader.cs" />
+    <Compile Include="..\Caribou\Processing\ProgressReporting.cs" Link="Processing\ProgressReporting.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Include test data files -->
+    <None Include="..\OSM Test Data\simple.xml" Link="TestData\simple.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\OSM Test Data\multipolygon-test.xml" Link="TestData\multipolygon-test.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

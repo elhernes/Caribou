@@ -116,6 +116,147 @@
             return geometryResult;
         }
 
+        public static Dictionary<OSMTag, List<Brep>> RelationBrepsFromCoords(RequestHandler result)
+        {
+            var geometryResult = new Dictionary<OSMTag, List<Brep>>();
+            var unitScale = RhinoMath.UnitScale(UnitSystem.Meters, RhinoDoc.ActiveDoc.ModelUnitSystem);
+            var tolerance = RhinoDoc.ActiveDoc.ModelAbsoluteTolerance;
+            Coord lengthPerDegree = GetDegreesPerAxis(result.MinBounds, result.MaxBounds, unitScale);
+
+            foreach (var entry in result.FoundData)
+            {
+                geometryResult[entry.Key] = new List<Brep>();
+
+                foreach (FoundItem item in entry.Value)
+                {
+                    // Only process relations (items with Members)
+                    if (item.Members == null || item.Members.Count == 0)
+                        continue;
+
+                    // Separate members by role
+                    var outerCurves = new List<PolylineCurve>();
+                    var innerCurves = new List<PolylineCurve>();
+
+                    foreach (var member in item.Members)
+                    {
+                        var memberPoints = new List<Point3d>();
+                        foreach (var coord in member.Coords)
+                        {
+                            var pt = GetPointFromLatLong(coord, lengthPerDegree, result.MinBounds);
+                            memberPoints.Add(pt);
+                        }
+
+                        if (memberPoints.Count > 0)
+                        {
+                            var curve = new PolylineCurve(memberPoints);
+
+                            // Force closure if within tolerance
+                            if (!curve.IsClosed && curve.IsClosable(ALLOWABLE_CLOSURE))
+                            {
+                                curve.MakeClosed(ALLOWABLE_CLOSURE);
+                            }
+
+                            // Categorize by role (empty role defaults to outer)
+                            if (member.Role == "inner")
+                            {
+                                innerCurves.Add(curve);
+                            }
+                            else // "outer" or empty
+                            {
+                                outerCurves.Add(curve);
+                            }
+                        }
+                    }
+
+                    // Create Breps from outer curves
+                    if (outerCurves.Count > 0)
+                    {
+                        foreach (var outerCurve in outerCurves)
+                        {
+                            if (!outerCurve.IsClosed)
+                                continue; // Skip non-closed curves
+
+                            var outerBreps = Brep.CreatePlanarBreps(outerCurve, tolerance);
+                            if (outerBreps == null || outerBreps.Length == 0)
+                                continue;
+
+                            var resultBrep = outerBreps[0];
+
+                            // Subtract inner curves (holes) from this outer Brep
+                            if (innerCurves.Count > 0)
+                            {
+                                foreach (var innerCurve in innerCurves)
+                                {
+                                    if (!innerCurve.IsClosed)
+                                        continue;
+
+                                    var innerBreps = Brep.CreatePlanarBreps(innerCurve, tolerance);
+                                    if (innerBreps != null && innerBreps.Length > 0)
+                                    {
+                                        var difference = Brep.CreateBooleanDifference(resultBrep, innerBreps[0], tolerance);
+                                        if (difference != null && difference.Length > 0)
+                                        {
+                                            resultBrep = difference[0];
+                                        }
+                                        // If boolean fails, keep the outer Brep without the hole
+                                    }
+                                }
+                            }
+
+                            geometryResult[entry.Key].Add(resultBrep);
+                        }
+                    }
+                }
+            }
+
+            return geometryResult;
+        }
+
+        public static Dictionary<OSMTag, List<PolylineCurve>> RelationPolylinesFromCoords(RequestHandler result)
+        {
+            var geometryResult = new Dictionary<OSMTag, List<PolylineCurve>>();
+            var unitScale = RhinoMath.UnitScale(UnitSystem.Meters, RhinoDoc.ActiveDoc.ModelUnitSystem);
+            Coord lengthPerDegree = GetDegreesPerAxis(result.MinBounds, result.MaxBounds, unitScale);
+
+            foreach (var entry in result.FoundData)
+            {
+                geometryResult[entry.Key] = new List<PolylineCurve>();
+
+                foreach (FoundItem item in entry.Value)
+                {
+                    // Only process relations (items with Members)
+                    if (item.Members == null || item.Members.Count == 0)
+                        continue;
+
+                    // Create a polyline for each member (outer and inner rings)
+                    foreach (var member in item.Members)
+                    {
+                        var memberPoints = new List<Point3d>();
+                        foreach (var coord in member.Coords)
+                        {
+                            var pt = GetPointFromLatLong(coord, lengthPerDegree, result.MinBounds);
+                            memberPoints.Add(pt);
+                        }
+
+                        if (memberPoints.Count > 0)
+                        {
+                            var curve = new PolylineCurve(memberPoints);
+
+                            // Force closure if within tolerance
+                            if (!curve.IsClosed && curve.IsClosable(ALLOWABLE_CLOSURE))
+                            {
+                                curve.MakeClosed(ALLOWABLE_CLOSURE);
+                            }
+
+                            geometryResult[entry.Key].Add(curve);
+                        }
+                    }
+                }
+            }
+
+            return geometryResult;
+        }
+
         // Thanks to Elk for this code!
         public static Coord GetDegreesPerAxis(Coord min, Coord max, double unitScale)
         {

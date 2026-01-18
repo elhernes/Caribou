@@ -147,6 +147,123 @@
             }
         }
 
+        public static void FindRelationsInXML(XmlReader reader, ref RequestHandler request, int fileIndex, bool onlyBuildings)
+        {
+            var allNodes = new Dictionary<string, Coord>();
+            var allWays = new Dictionary<string, List<Coord>>();
+            var xli = (IXmlLineInfo)reader;
+            var relationsCollected = 0;
+
+            // FIRST PASS: Collect all nodes
+            while (reader.Read())
+            {
+                if (reader.IsStartElement() && reader.Name == "node")
+                {
+                    var nodeId = reader.GetAttribute("id");
+                    allNodes[nodeId] = new Coord(
+                        Convert.ToDouble(reader.GetAttribute("lat"), CI),
+                        Convert.ToDouble(reader.GetAttribute("lon"), CI));
+                }
+                else if (reader.Name == "way" && reader.IsStartElement())
+                {
+                    break; // Move to second pass
+                }
+            }
+
+            // SECOND PASS: Collect all ways and their node references
+            var currentWayNodes = new List<Coord>();
+            string currentWayId = "";
+            bool inAWay = false;
+
+            while (reader.Read())
+            {
+                if (reader.IsStartElement())
+                {
+                    if (reader.Name == "way")
+                    {
+                        currentWayId = reader.GetAttribute("id");
+                        inAWay = true;
+                        currentWayNodes.Clear();
+                    }
+                    else if (inAWay && reader.Name == "nd")
+                    {
+                        var ndId = reader.GetAttribute("ref");
+                        if (allNodes.ContainsKey(ndId))
+                            currentWayNodes.Add(allNodes[ndId]);
+                    }
+                    else if (reader.Name == "relation")
+                    {
+                        break; // Move to third pass
+                    }
+                }
+                else if (reader.Name == "way")
+                {
+                    inAWay = false;
+                    if (!string.IsNullOrEmpty(currentWayId) && currentWayNodes.Count > 0)
+                    {
+                        allWays[currentWayId] = new List<Coord>(currentWayNodes);
+                    }
+                }
+            }
+
+            // THIRD PASS: Parse relations
+            string currentRelationId = "";
+            var currentRelationMetaData = new Dictionary<string, string>();
+            var currentRelationMembers = new List<RelationMember>();
+            bool inARelation = false;
+
+            while (reader.Read())
+            {
+                if (reader.IsStartElement())
+                {
+                    if (reader.Name == "relation")
+                    {
+                        currentRelationId = reader.GetAttribute("id");
+                        inARelation = true;
+                    }
+                    else if (inARelation && reader.Name == "member")
+                    {
+                        var memberType = reader.GetAttribute("type");
+                        var memberRef = reader.GetAttribute("ref");
+                        var memberRole = reader.GetAttribute("role") ?? "";
+
+                        // Only handle way members for now (multipolygon/boundary support)
+                        if (memberType == "way" && allWays.ContainsKey(memberRef))
+                        {
+                            var memberCoords = allWays[memberRef];
+                            var member = new RelationMember(memberRole, memberCoords, memberRef);
+                            currentRelationMembers.Add(member);
+                        }
+                    }
+                    else if (inARelation && reader.Name == "tag")
+                    {
+                        currentRelationMetaData[reader.GetAttribute("k").ToLower(CI)] = reader.GetAttribute("v");
+                    }
+                }
+                else
+                {
+                    inARelation = false;
+                    if (reader.Name == "relation")
+                    {
+                        // Only process if we have members (avoid empty relations)
+                        if (currentRelationMembers.Count > 0)
+                        {
+                            request.AddRelationIfMatchesRequest(
+                                currentRelationId,
+                                currentRelationMetaData,
+                                currentRelationMembers);
+                        }
+
+                        currentRelationMetaData.Clear();
+                        currentRelationMembers.Clear();
+                        relationsCollected++;
+                        if (relationsCollected % 500 == 0)
+                            ProgressReporting.Ping(xli.LineNumber, fileIndex, request);
+                    }
+                }
+            }
+        }
+
         // Retur n correct parser for each geometry type
         private static DispatchDelegate GetDispatchForType(OSMGeometryType typeToFind)
         {
@@ -155,6 +272,8 @@
                 dispatchForType = FindNodesInXML;
             else if (typeToFind == OSMGeometryType.Way || typeToFind == OSMGeometryType.Building)
                 dispatchForType = FindWaysInXML;
+            else if (typeToFind == OSMGeometryType.Relation)
+                dispatchForType = FindRelationsInXML;
             else
                 dispatchForType = null; // Necessary to prevent below paths thinking variable not set
             return dispatchForType;
