@@ -25,6 +25,7 @@
         public string WorkerId; // Used for progress reporting
         public Action<string, double> ReportProgress;
         public List<int> LinesPerFile;
+        public string RelationParsingStats; // Diagnostic info for relation parsing
 
         public RequestHandler(List<string> providedXMLs, ParseRequest requestedMetaData, OSMGeometryType requestedType,
                               Action<string, double> reportProgress, string workerId)
@@ -154,7 +155,7 @@
             foreach (var item in this.FoundData)
                 foundItemsForResult[item.Key] = item.Value.Count;
 
-            return TreeFormatters.MakeReportForRequests(foundItemsForResult);
+            return TreeFormatters.MakeReportForRequests(foundItemsForResult, this.RelationParsingStats);
         }
     }
 }

@@ -27,7 +27,7 @@
         {
             this.Tags = new Dictionary<string, string>(tags);
             this.Coords = new List<Coord>();
-            this.Members = members;
+            this.Members = new List<RelationMember>(members); // Make a copy to avoid clearing by reference
             this.Kind = OSMGeometryType.Relation;
         }
 

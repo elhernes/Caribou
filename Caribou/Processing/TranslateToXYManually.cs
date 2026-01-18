@@ -123,6 +123,14 @@
             var tolerance = RhinoDoc.ActiveDoc.ModelAbsoluteTolerance;
             Coord lengthPerDegree = GetDegreesPerAxis(result.MinBounds, result.MaxBounds, unitScale);
 
+            // Diagnostic counters
+            int totalRelationsProcessed = 0;
+            int totalOuterCurvesCreated = 0;
+            int totalInnerCurvesCreated = 0;
+            int totalBrepsCreated = 0;
+            int failedClosures = 0;
+            int failedBrepCreations = 0;
+
             foreach (var entry in result.FoundData)
             {
                 geometryResult[entry.Key] = new List<Brep>();
@@ -132,6 +140,8 @@
                     // Only process relations (items with Members)
                     if (item.Members == null || item.Members.Count == 0)
                         continue;
+
+                    totalRelationsProcessed++;
 
                     // Separate members by role
                     var outerCurves = new List<PolylineCurve>();
@@ -160,10 +170,12 @@
                             if (member.Role == "inner")
                             {
                                 innerCurves.Add(curve);
+                                totalInnerCurvesCreated++;
                             }
                             else // "outer" or empty
                             {
                                 outerCurves.Add(curve);
+                                totalOuterCurvesCreated++;
                             }
                         }
                     }
@@ -174,11 +186,17 @@
                         foreach (var outerCurve in outerCurves)
                         {
                             if (!outerCurve.IsClosed)
+                            {
+                                failedClosures++;
                                 continue; // Skip non-closed curves
+                            }
 
                             var outerBreps = Brep.CreatePlanarBreps(outerCurve, tolerance);
                             if (outerBreps == null || outerBreps.Length == 0)
+                            {
+                                failedBrepCreations++;
                                 continue;
+                            }
 
                             var resultBrep = outerBreps[0];
 
@@ -204,9 +222,27 @@
                             }
 
                             geometryResult[entry.Key].Add(resultBrep);
+                            totalBrepsCreated++;
                         }
                     }
                 }
+            }
+
+            // Add diagnostic output to RelationParsingStats
+            var diagnosticLine = $"Geometry: Processed {totalRelationsProcessed} relations, created {totalOuterCurvesCreated} outer curves, {totalInnerCurvesCreated} inner curves, {totalBrepsCreated} Breps";
+            if (failedClosures > 0 || failedBrepCreations > 0)
+            {
+                diagnosticLine += $" (failed: {failedClosures} closures, {failedBrepCreations} Brep creations)";
+            }
+
+            // Append to existing stats
+            if (!string.IsNullOrEmpty(result.RelationParsingStats))
+            {
+                result.RelationParsingStats += "\n" + diagnosticLine;
+            }
+            else
+            {
+                result.RelationParsingStats = diagnosticLine;
             }
 
             return geometryResult;

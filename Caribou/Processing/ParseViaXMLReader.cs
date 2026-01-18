@@ -4,6 +4,7 @@
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Xml;
     using Caribou.Models;
 
@@ -149,118 +150,140 @@
 
         public static void FindRelationsInXML(XmlReader reader, ref RequestHandler request, int fileIndex, bool onlyBuildings)
         {
+            // We need to get the XML path to create multiple readers for the three-pass approach
+            // Since XmlReader is forward-only, we can't rewind it
+            var xmlPathOrContent = request.XmlPaths[fileIndex];
+
+            // Determine if we're reading from a file path or XML content string (for testing)
+            // Check if it's a file that exists - if not, treat as XML content string
+            bool isTestContent = !System.IO.File.Exists(xmlPathOrContent);
+
             var allNodes = new Dictionary<string, Coord>();
             var allWays = new Dictionary<string, List<Coord>>();
-            var xli = (IXmlLineInfo)reader;
             var relationsCollected = 0;
 
             // FIRST PASS: Collect all nodes
-            while (reader.Read())
+            using (XmlReader pass1Reader = isTestContent
+                ? XmlReader.Create(new StringReader(xmlPathOrContent))
+                : XmlReader.Create(xmlPathOrContent))
             {
-                if (reader.IsStartElement() && reader.Name == "node")
+                while (pass1Reader.Read())
                 {
-                    var nodeId = reader.GetAttribute("id");
-                    allNodes[nodeId] = new Coord(
-                        Convert.ToDouble(reader.GetAttribute("lat"), CI),
-                        Convert.ToDouble(reader.GetAttribute("lon"), CI));
-                }
-                else if (reader.Name == "way" && reader.IsStartElement())
-                {
-                    break; // Move to second pass
+                    if (pass1Reader.IsStartElement() && pass1Reader.Name == "node")
+                    {
+                        var nodeId = pass1Reader.GetAttribute("id");
+                        allNodes[nodeId] = new Coord(
+                            Convert.ToDouble(pass1Reader.GetAttribute("lat"), CI),
+                            Convert.ToDouble(pass1Reader.GetAttribute("lon"), CI));
+                    }
                 }
             }
 
             // SECOND PASS: Collect all ways and their node references
-            var currentWayNodes = new List<Coord>();
-            string currentWayId = "";
-            bool inAWay = false;
-
-            while (reader.Read())
+            using (XmlReader pass2Reader = isTestContent
+                ? XmlReader.Create(new StringReader(xmlPathOrContent))
+                : XmlReader.Create(xmlPathOrContent))
             {
-                if (reader.IsStartElement())
+                var currentWayNodes = new List<Coord>();
+                string currentWayId = "";
+                bool inAWay = false;
+
+                while (pass2Reader.Read())
                 {
-                    if (reader.Name == "way")
+                    if (pass2Reader.IsStartElement())
                     {
-                        currentWayId = reader.GetAttribute("id");
-                        inAWay = true;
-                        currentWayNodes.Clear();
+                        if (pass2Reader.Name == "way")
+                        {
+                            currentWayId = pass2Reader.GetAttribute("id");
+                            inAWay = true;
+                            currentWayNodes.Clear();
+                        }
+                        else if (inAWay && pass2Reader.Name == "nd")
+                        {
+                            var ndId = pass2Reader.GetAttribute("ref");
+                            if (allNodes.ContainsKey(ndId))
+                                currentWayNodes.Add(allNodes[ndId]);
+                        }
                     }
-                    else if (inAWay && reader.Name == "nd")
+                    else if (pass2Reader.Name == "way")
                     {
-                        var ndId = reader.GetAttribute("ref");
-                        if (allNodes.ContainsKey(ndId))
-                            currentWayNodes.Add(allNodes[ndId]);
-                    }
-                    else if (reader.Name == "relation")
-                    {
-                        break; // Move to third pass
-                    }
-                }
-                else if (reader.Name == "way")
-                {
-                    inAWay = false;
-                    if (!string.IsNullOrEmpty(currentWayId) && currentWayNodes.Count > 0)
-                    {
-                        allWays[currentWayId] = new List<Coord>(currentWayNodes);
+                        inAWay = false;
+                        if (!string.IsNullOrEmpty(currentWayId) && currentWayNodes.Count > 0)
+                        {
+                            allWays[currentWayId] = new List<Coord>(currentWayNodes);
+                        }
                     }
                 }
             }
 
             // THIRD PASS: Parse relations
-            string currentRelationId = "";
-            var currentRelationMetaData = new Dictionary<string, string>();
-            var currentRelationMembers = new List<RelationMember>();
-            bool inARelation = false;
-
-            while (reader.Read())
+            using (XmlReader pass3Reader = isTestContent
+                ? XmlReader.Create(new StringReader(xmlPathOrContent))
+                : XmlReader.Create(xmlPathOrContent))
             {
-                if (reader.IsStartElement())
-                {
-                    if (reader.Name == "relation")
-                    {
-                        currentRelationId = reader.GetAttribute("id");
-                        inARelation = true;
-                    }
-                    else if (inARelation && reader.Name == "member")
-                    {
-                        var memberType = reader.GetAttribute("type");
-                        var memberRef = reader.GetAttribute("ref");
-                        var memberRole = reader.GetAttribute("role") ?? "";
+                var xli = (IXmlLineInfo)pass3Reader;
+                string currentRelationId = "";
+                var currentRelationMetaData = new Dictionary<string, string>();
+                var currentRelationMembers = new List<RelationMember>();
+                bool inARelation = false;
+                int totalRelations = 0;
+                int relationsWithWayMembers = 0;
 
-                        // Only handle way members for now (multipolygon/boundary support)
-                        if (memberType == "way" && allWays.ContainsKey(memberRef))
+                while (pass3Reader.Read())
+                {
+                    if (pass3Reader.IsStartElement())
+                    {
+                        if (pass3Reader.Name == "relation")
                         {
-                            var memberCoords = allWays[memberRef];
-                            var member = new RelationMember(memberRole, memberCoords, memberRef);
-                            currentRelationMembers.Add(member);
+                            currentRelationId = pass3Reader.GetAttribute("id");
+                            inARelation = true;
+                            totalRelations++;
+                        }
+                        else if (inARelation && pass3Reader.Name == "member")
+                        {
+                            var memberType = pass3Reader.GetAttribute("type");
+                            var memberRef = pass3Reader.GetAttribute("ref");
+                            var memberRole = pass3Reader.GetAttribute("role") ?? "";
+
+                            // Only handle way members for now (multipolygon/boundary support)
+                            if (memberType == "way" && allWays.ContainsKey(memberRef))
+                            {
+                                var memberCoords = allWays[memberRef];
+                                var member = new RelationMember(memberRole, memberCoords, memberRef);
+                                currentRelationMembers.Add(member);
+                            }
+                        }
+                        else if (inARelation && pass3Reader.Name == "tag")
+                        {
+                            currentRelationMetaData[pass3Reader.GetAttribute("k").ToLower(CI)] = pass3Reader.GetAttribute("v");
                         }
                     }
-                    else if (inARelation && reader.Name == "tag")
+                    else
                     {
-                        currentRelationMetaData[reader.GetAttribute("k").ToLower(CI)] = reader.GetAttribute("v");
-                    }
-                }
-                else
-                {
-                    inARelation = false;
-                    if (reader.Name == "relation")
-                    {
-                        // Only process if we have members (avoid empty relations)
-                        if (currentRelationMembers.Count > 0)
+                        inARelation = false;
+                        if (pass3Reader.Name == "relation")
                         {
-                            request.AddRelationIfMatchesRequest(
-                                currentRelationId,
-                                currentRelationMetaData,
-                                currentRelationMembers);
-                        }
+                            // Only process if we have members (avoid empty relations)
+                            if (currentRelationMembers.Count > 0)
+                            {
+                                relationsWithWayMembers++;
+                                request.AddRelationIfMatchesRequest(
+                                    currentRelationId,
+                                    currentRelationMetaData,
+                                    currentRelationMembers);
+                            }
 
-                        currentRelationMetaData.Clear();
-                        currentRelationMembers.Clear();
-                        relationsCollected++;
-                        if (relationsCollected % 500 == 0)
-                            ProgressReporting.Ping(xli.LineNumber, fileIndex, request);
+                            currentRelationMetaData.Clear();
+                            currentRelationMembers.Clear();
+                            relationsCollected++;
+                            if (relationsCollected % 500 == 0)
+                                ProgressReporting.Ping(xli.LineNumber, fileIndex, request);
+                        }
                     }
                 }
+
+                // Store parsing statistics for diagnostic output
+                request.RelationParsingStats = $"Parsed {allNodes.Count} nodes, {allWays.Count} ways, {totalRelations} relations ({relationsWithWayMembers} with way members)";
             }
         }
 

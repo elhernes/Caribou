@@ -36,7 +36,7 @@
         }
 
         public static GH_Structure<GH_String> MakeReportForRequests(
-            Dictionary<OSMTag, int> foundItemsForResult)
+            Dictionary<OSMTag, int> foundItemsForResult, string diagnosticInfo = null)
         {
             var output = new GH_Structure<GH_String>();
             var tInfo = CultureInfo.CurrentCulture.TextInfo;
@@ -71,6 +71,14 @@
                 {
                     output.Append(new GH_String($"Defined as: {metaData.Description}"), path);
                 }
+            }
+
+            // Add diagnostic info at the end if provided (for relation parsing)
+            if (!string.IsNullOrEmpty(diagnosticInfo))
+            {
+                var diagPath = new GH_Path(requestMetaDataItems.Count);
+                output.Append(new GH_String("Parsing Summary:"), diagPath);
+                output.Append(new GH_String(diagnosticInfo), diagPath);
             }
 
             return output;

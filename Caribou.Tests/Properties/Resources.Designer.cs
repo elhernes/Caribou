@@ -131,5 +131,23 @@ namespace Caribou.Tests.Properties {
                 return ResourceManager.GetString("SimpleOSM", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to the multipolygon test OSM data.
+        /// </summary>
+        internal static string MultipolygonOSM {
+            get {
+                return ResourceManager.GetString("MultipolygonOSM", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to the Ortonville golf course OSM data.
+        /// </summary>
+        internal static string GolfCourseOSM {
+            get {
+                return ResourceManager.GetString("GolfCourseOSM", resourceCulture);
+            }
+        }
     }
 }
