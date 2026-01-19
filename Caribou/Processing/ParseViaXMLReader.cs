@@ -370,5 +370,93 @@
                 currentMaxLon = boundsMaxLon;
             }
         }
+
+        /// <summary>Extracts all unique tags from an OSM file grouped by key</summary>
+        /// <returns>Dictionary where key is the OSM key (e.g. "building") and value is a HashSet of all values found</returns>
+        public static Dictionary<string, HashSet<string>> ExtractAllUniqueTags(string xmlPathOrContent)
+        {
+            var tagsByKey = new Dictionary<string, HashSet<string>>();
+            bool isTestContent = !System.IO.File.Exists(xmlPathOrContent);
+
+            using (XmlReader reader = isTestContent
+                ? XmlReader.Create(new StringReader(xmlPathOrContent))
+                : XmlReader.Create(xmlPathOrContent))
+            {
+                while (reader.Read())
+                {
+                    if (reader.IsStartElement() && reader.Name == "tag")
+                    {
+                        string key = reader.GetAttribute("k").ToLower(CI);
+                        string value = reader.GetAttribute("v");
+
+                        if (!tagsByKey.ContainsKey(key))
+                            tagsByKey[key] = new HashSet<string>();
+
+                        tagsByKey[key].Add(value);
+                    }
+                }
+            }
+
+            return tagsByKey;
+        }
+
+        /// <summary>Extracts all unique tags from an OSM file grouped by key, filtered by element type</summary>
+        /// <param name="xmlPathOrContent">Path to OSM file or XML content string</param>
+        /// <param name="elementType">Filter to only include tags from this element type (null = all types)</param>
+        /// <returns>Dictionary where key is the OSM key and value is a HashSet of all values found on the specified element type</returns>
+        public static Dictionary<string, HashSet<string>> ExtractAllUniqueTagsFiltered(string xmlPathOrContent, OSMGeometryType? elementType = null)
+        {
+            var tagsByKey = new Dictionary<string, HashSet<string>>();
+            bool isTestContent = !System.IO.File.Exists(xmlPathOrContent);
+
+            using (XmlReader reader = isTestContent
+                ? XmlReader.Create(new StringReader(xmlPathOrContent))
+                : XmlReader.Create(xmlPathOrContent))
+            {
+                string currentElementType = null;
+                bool inElement = false;
+
+                while (reader.Read())
+                {
+                    if (reader.IsStartElement())
+                    {
+                        if (reader.Name == "node" || reader.Name == "way" || reader.Name == "relation")
+                        {
+                            currentElementType = reader.Name;
+                            inElement = true;
+                        }
+                        else if (inElement && reader.Name == "tag")
+                        {
+                            // Check if we should include tags from this element type
+                            bool shouldInclude = !elementType.HasValue ||
+                                (elementType.Value == OSMGeometryType.Node && currentElementType == "node") ||
+                                (elementType.Value == OSMGeometryType.Way && currentElementType == "way") ||
+                                (elementType.Value == OSMGeometryType.Relation && currentElementType == "relation");
+
+                            if (shouldInclude)
+                            {
+                                string key = reader.GetAttribute("k").ToLower(CI);
+                                string value = reader.GetAttribute("v");
+
+                                if (!tagsByKey.ContainsKey(key))
+                                    tagsByKey[key] = new HashSet<string>();
+
+                                tagsByKey[key].Add(value);
+                            }
+                        }
+                    }
+                    else if (reader.NodeType == XmlNodeType.EndElement)
+                    {
+                        if (reader.Name == "node" || reader.Name == "way" || reader.Name == "relation")
+                        {
+                            inElement = false;
+                            currentElementType = null;
+                        }
+                    }
+                }
+            }
+
+            return tagsByKey;
+        }
     }
 }
